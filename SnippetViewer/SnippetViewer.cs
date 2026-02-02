@@ -49,38 +49,27 @@ namespace SnippetViewer
             contentTextBox.SelectionStart = 0;
             contentTextBox.SelectionLength = 0;
 
-            // マウスカーソルがウィンドウの中心になるように表示
-            PositionWindowAtCursor();
-
-            // 起動時にフォーカスをあてる
-            this.Shown += (s, e) => this.Activate();
+            // 起動時にフォーカスをあてる＆マウスカーソルをウィンドウアイコン上に移動
+            this.Shown += (s, e) =>
+            {
+                this.Activate();
+                PositionCursorAtWindowIcon();
+            };
         }
 
-        private void PositionWindowAtCursor()
+        private void PositionCursorAtWindowIcon()
         {
             try
             {
-                // マウスカーソルがウィンドウの中心になるように配置
-                Point cursorPos = Cursor.Position;
-                var currentScreen = Screen.FromPoint(cursorPos);
-                var area = currentScreen.WorkingArea;
-
-                int newX = cursorPos.X - this.Width / 2;
-                int newY = cursorPos.Y - this.Height / 2;
-
-                // 画面外にはみ出さないように調整
-                if (newX + this.Width > area.Right) newX = area.Right - this.Width;
-                if (newY + this.Height > area.Bottom) newY = area.Bottom - this.Height;
-                if (newX < area.Left) newX = area.Left;
-                if (newY < area.Top) newY = area.Top;
-
-                this.StartPosition = FormStartPosition.Manual;
-                this.Location = new Point(newX, newY);
+                // マウスカーソルをウィンドウの左上アイコン位置に移動
+                // タイトルバーのアイコンは通常、左上隅から少し内側にある
+                int iconX = this.Location.X + 15;
+                int iconY = this.Location.Y + 15;
+                Cursor.Position = new Point(iconX, iconY);
             }
             catch
             {
-                // 失敗した場合は標準位置で起動
-                this.StartPosition = FormStartPosition.CenterScreen;
+                // 失敗しても続行
             }
         }
 
