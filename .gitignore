@@ -1,0 +1,55 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Pp]ublish/
+
+# .NET
+*.dll
+*.exe
+*.pdb
+*.cache
+*.log
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.vspscc
+*.vssscc
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# User-specific files
+*.rsuser
+*.userprefs
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Build artifacts
+*.msi
+*.msm
+*.msp
+*.msix
+*.appx
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Application settings (user-specific)
+SnippetViewer/settings.json
+
+# Project specification
+policy.md
