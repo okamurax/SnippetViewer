@@ -52,8 +52,13 @@ namespace SnippetViewer
             // マウスカーソル位置にウィンドウアイコンが来るようにウィンドウを配置
             PositionWindowAtCursor();
 
-            // 起動時にフォーカスをあてる
-            this.Shown += (s, e) => this.Activate();
+            // 起動時に最前面に表示してフォーカスをあてる
+            this.Shown += (s, e) =>
+            {
+                this.TopMost = true;
+                this.Activate();
+                this.TopMost = false;
+            };
         }
 
         private void PositionWindowAtCursor()
