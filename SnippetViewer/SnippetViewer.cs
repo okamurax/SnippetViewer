@@ -135,7 +135,6 @@ namespace SnippetViewer
             };
             fileListBox.SelectedIndexChanged += FileListBox_SelectedIndexChanged;
             fileListBox.DoubleClick += FileListBox_DoubleClick;
-            fileListBox.MouseMove += FileListBox_MouseMove;
 
             leftPanel.Controls.Add(fileListBox);
             leftPanel.Controls.Add(fileLabel);
@@ -163,7 +162,6 @@ namespace SnippetViewer
                 IntegralHeight = false  // 高さをピクセル単位で調整可能に
             };
             headingListBox.SelectedIndexChanged += HeadingListBox_SelectedIndexChanged;
-            headingListBox.MouseMove += HeadingListBox_MouseMove;
 
             centerPanel.Controls.Add(headingListBox);
             centerPanel.Controls.Add(headingSearchBox);
@@ -433,24 +431,6 @@ namespace SnippetViewer
             catch
             {
                 // ファイルを開けない場合は無視
-            }
-        }
-
-        private void FileListBox_MouseMove(object sender, MouseEventArgs e)
-        {
-            int index = fileListBox.IndexFromPoint(e.Location);
-            if (index >= 0 && index != fileListBox.SelectedIndex)
-            {
-                fileListBox.SelectedIndex = index;
-            }
-        }
-
-        private void HeadingListBox_MouseMove(object sender, MouseEventArgs e)
-        {
-            int index = headingListBox.IndexFromPoint(e.Location);
-            if (index >= 0 && index != headingListBox.SelectedIndex)
-            {
-                headingListBox.SelectedIndex = index;
             }
         }
 
