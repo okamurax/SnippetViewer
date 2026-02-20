@@ -34,12 +34,13 @@ namespace SnippetViewer
         private ListBox clipboardListBox;
         private List<string> clipboardHistory = new List<string>();
         private bool isSettingClipboard = false;
+        private bool isExiting = false;
 
         private ListBox fileListBox;
         private TextBox headingSearchBox;
         private ListBox headingListBox;
         private TextBox contentSearchBox;
-        private TextBox contentTextBox;
+        private RichTextBox contentTextBox;
 
         private List<SnippetFile> snippetFiles = new List<SnippetFile>();
         private List<Heading> allHeadings = new List<Heading>();
@@ -221,9 +222,15 @@ namespace SnippetViewer
                 }
             };
 
-            // 終了時に設定を保存とクリーンアップ
+            // ×ボタンでは非表示にするだけ（終了はトレイメニューからのみ）
             this.FormClosing += (s, e) =>
             {
+                if (!isExiting)
+                {
+                    e.Cancel = true;
+                    this.Hide();
+                    return;
+                }
                 SaveSettings();
                 notifyIcon.Visible = false;
                 notifyIcon.Dispose();
@@ -238,7 +245,7 @@ namespace SnippetViewer
             };
             var trayMenu = new ContextMenuStrip();
             trayMenu.Items.Add("表示", null, (s, e) => ShowAndActivate());
-            trayMenu.Items.Add("終了", null, (s, e) => Application.Exit());
+            trayMenu.Items.Add("終了", null, (s, e) => { isExiting = true; Application.Exit(); });
             notifyIcon.ContextMenuStrip = trayMenu;
             notifyIcon.DoubleClick += (s, e) => ShowAndActivate();
 
@@ -352,11 +359,10 @@ namespace SnippetViewer
             };
             contentSearchBox.TextChanged += ContentSearchBox_TextChanged;
 
-            contentTextBox = new TextBox
+            contentTextBox = new RichTextBox
             {
                 Dock = DockStyle.Fill,
-                Multiline = true,
-                ScrollBars = ScrollBars.Both,
+                ScrollBars = RichTextBoxScrollBars.Both,
                 Font = new Font("Yu Gothic UI", 10),
                 ReadOnly = true,
                 WordWrap = false
@@ -472,7 +478,7 @@ namespace SnippetViewer
                 {
                     FilePath = file,
                     FileName = Path.GetFileName(file),
-                    Content = File.ReadAllText(file, Encoding.UTF8)
+                    Content = Regex.Replace(File.ReadAllText(file, Encoding.UTF8), @"\r?\n", "\r\n")
                 };
                 snippetFile.Headings = ParseHeadings(snippetFile.Content);
                 snippetFiles.Add(snippetFile);
@@ -520,11 +526,9 @@ namespace SnippetViewer
         {
             var headings = new List<Heading>();
             var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-            var regex = new Regex(@"^(#{1,6})\s+(.+)$");
-
             for (int i = 0; i < lines.Length; i++)
             {
-                var match = regex.Match(lines[i]);
+                var match = headingRegex.Match(lines[i]);
                 if (match.Success)
                 {
                     int level = match.Groups[1].Value.Length;
@@ -535,7 +539,7 @@ namespace SnippetViewer
                     int endLine = startLine;
                     for (int j = startLine; j < lines.Length; j++)
                     {
-                        if (regex.IsMatch(lines[j]))
+                        if (headingRegex.IsMatch(lines[j]))
                         {
                             break;
                         }
@@ -558,6 +562,37 @@ namespace SnippetViewer
             return headings;
         }
 
+        private static readonly Regex headingRegex = new Regex(@"^(#{1,6})\s+(.+)$", RegexOptions.Compiled | RegexOptions.Multiline);
+
+        private void SetContentWithFormatting(string content)
+        {
+            // 見出し行から # を除去して表示用テキストを作成
+            string displayText = headingRegex.Replace(content, "$2");
+            contentTextBox.Text = displayText;
+
+            // 見出し行の背景色を変える
+            var originalLines = content.Split(new[] { "\r\n" }, StringSplitOptions.None);
+            Color headingBgColor = Color.FromArgb(220, 220, 220);
+
+            for (int i = 0; i < originalLines.Length; i++)
+            {
+                if (headingRegex.IsMatch(originalLines[i]))
+                {
+                    int charIndex = contentTextBox.GetFirstCharIndexFromLine(i);
+                    if (charIndex >= 0 && i < contentTextBox.Lines.Length)
+                    {
+                        int lineLen = contentTextBox.Lines[i].Length;
+                        if (i < contentTextBox.Lines.Length - 1) lineLen += 1;
+                        contentTextBox.Select(charIndex, lineLen);
+                        contentTextBox.SelectionBackColor = headingBgColor;
+                    }
+                }
+            }
+
+            contentTextBox.SelectionStart = 0;
+            contentTextBox.SelectionLength = 0;
+        }
+
         private string GetIndent(int level)
         {
             // 見出し1はインデントなし、見出し2は全角スペース1つ、見出し3は全角スペース2つ...
@@ -571,9 +606,10 @@ namespace SnippetViewer
             var selectedFile = snippetFiles[fileListBox.SelectedIndex];
             allHeadings = selectedFile.Headings;
             UpdateHeadingList();
-            contentTextBox.Clear();
             headingSearchBox.Clear();
             contentSearchBox.Clear();
+            SetContentWithFormatting(selectedFile.Content);
+            contentTextBox.ScrollToCaret();
         }
 
         private void FileListBox_DoubleClick(object sender, EventArgs e)
@@ -632,33 +668,47 @@ namespace SnippetViewer
         private void HeadingListBox_SelectedIndexChanged(object sender, EventArgs e)
         {
             if (headingListBox.SelectedIndex < 0) return;
+            if (fileListBox.SelectedIndex < 0) return;
 
             var selectedHeading = filteredHeadings[headingListBox.SelectedIndex];
-            contentTextBox.Text = selectedHeading.Content;
-            contentSearchBox.Clear();
+            var selectedFile = snippetFiles[fileListBox.SelectedIndex];
+
+            // 検索フィルタ中は全文に戻す
+            if (!string.IsNullOrEmpty(contentSearchBox.Text))
+            {
+                contentSearchBox.Clear();
+                SetContentWithFormatting(selectedFile.Content);
+            }
+
+            // 見出しの行位置までスクロール
+            int lineNumber = selectedHeading.LineNumber;
+            int charIndex = contentTextBox.GetFirstCharIndexFromLine(lineNumber);
+            if (charIndex >= 0)
+            {
+                contentTextBox.SelectionStart = charIndex;
+                contentTextBox.SelectionLength = 0;
+                contentTextBox.ScrollToCaret();
+            }
         }
 
         private void ContentSearchBox_TextChanged(object sender, EventArgs e)
         {
+            if (fileListBox.SelectedIndex < 0) return;
+
+            var selectedFile = snippetFiles[fileListBox.SelectedIndex];
             string filter = contentSearchBox.Text.ToLower();
+
             if (string.IsNullOrEmpty(filter))
             {
-                // フィルタが空なら元の内容を表示
-                if (headingListBox.SelectedIndex >= 0 && headingListBox.SelectedIndex < filteredHeadings.Count)
-                {
-                    contentTextBox.Text = filteredHeadings[headingListBox.SelectedIndex].Content;
-                }
+                // フィルタが空ならファイル全体を表示
+                SetContentWithFormatting(selectedFile.Content);
                 return;
             }
 
-            // 内容内で検索してハイライト（簡易版：該当行のみ表示）
-            if (headingListBox.SelectedIndex >= 0 && headingListBox.SelectedIndex < filteredHeadings.Count)
-            {
-                var content = filteredHeadings[headingListBox.SelectedIndex].Content;
-                var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-                var matchedLines = lines.Where(l => l.ToLower().Contains(filter));
-                contentTextBox.Text = string.Join(Environment.NewLine, matchedLines);
-            }
+            // ファイル全体から該当行のみ表示
+            var lines = selectedFile.Content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+            var matchedLines = lines.Where(l => l.ToLower().Contains(filter));
+            SetContentWithFormatting(string.Join(Environment.NewLine, matchedLines));
         }
 
         private void ContentTextBox_Click(object sender, EventArgs e)
