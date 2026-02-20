@@ -24,12 +24,12 @@ namespace SnippetViewer
         private const int WM_CLIPBOARDUPDATE = 0x031D;
 
         private Panel clipboardPanel;
-        private Panel leftPanel;
-        private Panel centerPanel;
+        private Panel snippetPanel;
+        private Panel fileSection;
         private Panel rightPanel;
         private Splitter splitter0;
         private Splitter splitter1;
-        private Splitter splitter2;
+        private Splitter snippetSplitter;
 
         private ListBox clipboardListBox;
         private List<string> clipboardHistory = new List<string>();
@@ -271,15 +271,21 @@ namespace SnippetViewer
             clipboardPanel.Controls.Add(clipboardListBox);
             clipboardPanel.Controls.Add(clipboardLabel);
 
-            // 左側パネル（ファイル一覧）
-            leftPanel = new Panel
+            // スニペットパネル（中央：ファイル一覧＋見出し一覧を上下に配置）
+            snippetPanel = new Panel
             {
                 Dock = DockStyle.Left,
-                Width = 200,
+                Width = 300,
                 Padding = new Padding(0, 0, PanelMargin, 0)
             };
 
-            // 左上のラベル（高さを合わせるため）
+            // 上部：ファイル一覧
+            fileSection = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 200
+            };
+
             Label fileLabel = new Label
             {
                 Dock = DockStyle.Top,
@@ -294,22 +300,23 @@ namespace SnippetViewer
             {
                 Dock = DockStyle.Fill,
                 Font = new Font("Yu Gothic UI", 10),
-                IntegralHeight = false  // 高さをピクセル単位で調整可能に
+                IntegralHeight = false
             };
             fileListBox.SelectedIndexChanged += FileListBox_SelectedIndexChanged;
             fileListBox.DoubleClick += FileListBox_DoubleClick;
 
-            leftPanel.Controls.Add(fileListBox);
-            leftPanel.Controls.Add(fileLabel);
+            fileSection.Controls.Add(fileListBox);
+            fileSection.Controls.Add(fileLabel);
 
-            // 中央パネル（見出し一覧）
-            centerPanel = new Panel
+            // 上下スプリッター
+            snippetSplitter = new Splitter
             {
-                Dock = DockStyle.Left,
-                Width = 350,
-                Padding = new Padding(0, 0, PanelMargin, 0)
+                Dock = DockStyle.Top,
+                Height = 5,
+                BackColor = SystemColors.ControlLight
             };
 
+            // 下部：見出し一覧
             headingSearchBox = new TextBox
             {
                 Dock = DockStyle.Top,
@@ -322,12 +329,14 @@ namespace SnippetViewer
             {
                 Dock = DockStyle.Fill,
                 Font = new Font("Yu Gothic UI", 10),
-                IntegralHeight = false  // 高さをピクセル単位で調整可能に
+                IntegralHeight = false
             };
             headingListBox.SelectedIndexChanged += HeadingListBox_SelectedIndexChanged;
 
-            centerPanel.Controls.Add(headingListBox);
-            centerPanel.Controls.Add(headingSearchBox);
+            snippetPanel.Controls.Add(headingListBox);
+            snippetPanel.Controls.Add(headingSearchBox);
+            snippetPanel.Controls.Add(snippetSplitter);
+            snippetPanel.Controls.Add(fileSection);
 
             // 右側パネル（内容表示）
             rightPanel = new Panel
@@ -357,7 +366,7 @@ namespace SnippetViewer
             rightPanel.Controls.Add(contentTextBox);
             rightPanel.Controls.Add(contentSearchBox);
 
-            // スプリッター追加
+            // 左右スプリッター追加
             splitter0 = new Splitter
             {
                 Dock = DockStyle.Left,
@@ -370,18 +379,10 @@ namespace SnippetViewer
                 Width = 5,
                 BackColor = SystemColors.ControlLight
             };
-            splitter2 = new Splitter
-            {
-                Dock = DockStyle.Left,
-                Width = 5,
-                BackColor = SystemColors.ControlLight
-            };
 
             this.Controls.Add(rightPanel);
-            this.Controls.Add(splitter2);
-            this.Controls.Add(centerPanel);
             this.Controls.Add(splitter1);
-            this.Controls.Add(leftPanel);
+            this.Controls.Add(snippetPanel);
             this.Controls.Add(splitter0);
             this.Controls.Add(clipboardPanel);
         }
@@ -399,8 +400,8 @@ namespace SnippetViewer
                     this.Size = new Size(settings.WindowWidth, settings.WindowHeight);
 
                     clipboardPanel.Width = settings.ClipboardPanelWidth;
-                    leftPanel.Width = settings.LeftPanelWidth;
-                    centerPanel.Width = settings.CenterPanelWidth;
+                    snippetPanel.Width = settings.SnippetPanelWidth;
+                    fileSection.Height = settings.FileSectionHeight;
                     clipboardHistoryMaxCount = settings.ClipboardHistoryMaxCount;
 
                     // 選択状態を一時保存（LoadSnippetFilesで復元）
@@ -436,8 +437,8 @@ namespace SnippetViewer
                     WindowWidth = this.Size.Width,
                     WindowHeight = this.Size.Height,
                     ClipboardPanelWidth = clipboardPanel.Width,
-                    LeftPanelWidth = leftPanel.Width,
-                    CenterPanelWidth = centerPanel.Width,
+                    SnippetPanelWidth = snippetPanel.Width,
+                    FileSectionHeight = fileSection.Height,
                     ClipboardHistoryMaxCount = clipboardHistoryMaxCount,
                     SelectedFileName = selectedFileName,
                     SelectedHeadingTitle = selectedHeadingTitle
@@ -708,8 +709,8 @@ namespace SnippetViewer
         public int WindowWidth { get; set; } = 1200;
         public int WindowHeight { get; set; } = 700;
         public int ClipboardPanelWidth { get; set; } = 200;
-        public int LeftPanelWidth { get; set; } = 200;
-        public int CenterPanelWidth { get; set; } = 350;
+        public int SnippetPanelWidth { get; set; } = 300;
+        public int FileSectionHeight { get; set; } = 200;
         public int ClipboardHistoryMaxCount { get; set; } = 50;
         public string SelectedFileName { get; set; } = "";
         public string SelectedHeadingTitle { get; set; } = "";
