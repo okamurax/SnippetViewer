@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -14,11 +15,25 @@ namespace SnippetViewer
 {
     public class MainForm : Form
     {
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+
+        private const int WM_CLIPBOARDUPDATE = 0x031D;
+
+        private Panel clipboardPanel;
         private Panel leftPanel;
         private Panel centerPanel;
         private Panel rightPanel;
+        private Splitter splitter0;
         private Splitter splitter1;
         private Splitter splitter2;
+
+        private ListBox clipboardListBox;
+        private List<string> clipboardHistory = new List<string>();
+        private bool isSettingClipboard = false;
 
         private ListBox fileListBox;
         private TextBox headingSearchBox;
@@ -30,9 +45,12 @@ namespace SnippetViewer
         private List<Heading> allHeadings = new List<Heading>();
         private List<Heading> filteredHeadings = new List<Heading>();
 
+        private NotifyIcon notifyIcon;
+
         private string settingsPath;
         private const int PanelMargin = 6;
         private const int SearchBoxHeight = 28;
+        private int clipboardHistoryMaxCount = 50;
 
         // 復元用の選択状態
         private string savedSelectedFileName = "";
@@ -59,6 +77,99 @@ namespace SnippetViewer
                 this.Activate();
                 this.TopMost = false;
             };
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            AddClipboardFormatListener(this.Handle);
+        }
+
+        protected override void OnHandleDestroyed(EventArgs e)
+        {
+            RemoveClipboardFormatListener(this.Handle);
+            base.OnHandleDestroyed(e);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_CLIPBOARDUPDATE)
+            {
+                OnClipboardChanged();
+            }
+            else if (m.Msg == (int)Program.WM_SHOWME)
+            {
+                ShowAndActivate();
+            }
+            base.WndProc(ref m);
+        }
+
+        private void ShowAndActivate()
+        {
+            PositionWindowAtCursor();
+            this.Show();
+            this.WindowState = FormWindowState.Normal;
+            this.TopMost = true;
+            this.Activate();
+            this.TopMost = false;
+        }
+
+        private void OnClipboardChanged()
+        {
+            if (isSettingClipboard) return;
+
+            try
+            {
+                if (Clipboard.ContainsText())
+                {
+                    string text = Clipboard.GetText();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        // 最新エントリと同じなら無視
+                        if (clipboardHistory.Count > 0 && clipboardHistory[0] == text) return;
+
+                        // 履歴内の重複を削除して先頭に追加
+                        clipboardHistory.Remove(text);
+                        clipboardHistory.Insert(0, text);
+                        if (clipboardHistory.Count > clipboardHistoryMaxCount)
+                        {
+                            clipboardHistory.RemoveAt(clipboardHistory.Count - 1);
+                        }
+                        UpdateClipboardList();
+                    }
+                }
+            }
+            catch
+            {
+                // クリップボードアクセス失敗時は無視
+            }
+        }
+
+        private void UpdateClipboardList()
+        {
+            clipboardListBox.Items.Clear();
+            foreach (var text in clipboardHistory)
+            {
+                string firstLine = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None)[0];
+                if (firstLine.Length > 80) firstLine = firstLine.Substring(0, 80) + "...";
+                clipboardListBox.Items.Add(firstLine);
+            }
+        }
+
+        private void ClipboardListBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (clipboardListBox.SelectedIndex < 0) return;
+
+            try
+            {
+                isSettingClipboard = true;
+                Clipboard.SetText(clipboardHistory[clipboardListBox.SelectedIndex]);
+            }
+            catch { }
+            finally
+            {
+                isSettingClipboard = false;
+            }
         }
 
         private void PositionWindowAtCursor()
@@ -97,21 +208,68 @@ namespace SnippetViewer
             this.StartPosition = FormStartPosition.CenterScreen;
             this.Padding = new Padding(PanelMargin);
 
-            // フォーカスが外れたら終了
-            this.Deactivate += (s, e) => Application.Exit();
+            // フォーカスが外れたら非表示（常駐）
+            this.Deactivate += (s, e) => this.Hide();
 
-            // ESCキーで終了
+            // ESCキーで非表示
             this.KeyPreview = true;
             this.KeyDown += (s, e) =>
             {
                 if (e.KeyCode == Keys.Escape)
                 {
-                    Application.Exit();
+                    this.Hide();
                 }
             };
 
-            // 終了時に設定を保存
-            this.FormClosing += (s, e) => SaveSettings();
+            // 終了時に設定を保存とクリーンアップ
+            this.FormClosing += (s, e) =>
+            {
+                SaveSettings();
+                notifyIcon.Visible = false;
+                notifyIcon.Dispose();
+            };
+
+            // システムトレイアイコン
+            notifyIcon = new NotifyIcon
+            {
+                Icon = SystemIcons.Application,
+                Text = "Snippet Viewer",
+                Visible = true
+            };
+            var trayMenu = new ContextMenuStrip();
+            trayMenu.Items.Add("表示", null, (s, e) => ShowAndActivate());
+            trayMenu.Items.Add("終了", null, (s, e) => Application.Exit());
+            notifyIcon.ContextMenuStrip = trayMenu;
+            notifyIcon.DoubleClick += (s, e) => ShowAndActivate();
+
+            // クリップボード履歴パネル（最左）
+            clipboardPanel = new Panel
+            {
+                Dock = DockStyle.Left,
+                Width = 200,
+                Padding = new Padding(0, 0, PanelMargin, 0)
+            };
+
+            Label clipboardLabel = new Label
+            {
+                Dock = DockStyle.Top,
+                Text = "クリップボード履歴",
+                Font = new Font("Yu Gothic UI", 10),
+                Height = SearchBoxHeight,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(2, 0, 0, 0)
+            };
+
+            clipboardListBox = new ListBox
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Yu Gothic UI", 10),
+                IntegralHeight = false
+            };
+            clipboardListBox.SelectedIndexChanged += ClipboardListBox_SelectedIndexChanged;
+
+            clipboardPanel.Controls.Add(clipboardListBox);
+            clipboardPanel.Controls.Add(clipboardLabel);
 
             // 左側パネル（ファイル一覧）
             leftPanel = new Panel
@@ -200,6 +358,12 @@ namespace SnippetViewer
             rightPanel.Controls.Add(contentSearchBox);
 
             // スプリッター追加
+            splitter0 = new Splitter
+            {
+                Dock = DockStyle.Left,
+                Width = 5,
+                BackColor = SystemColors.ControlLight
+            };
             splitter1 = new Splitter
             {
                 Dock = DockStyle.Left,
@@ -218,6 +382,8 @@ namespace SnippetViewer
             this.Controls.Add(centerPanel);
             this.Controls.Add(splitter1);
             this.Controls.Add(leftPanel);
+            this.Controls.Add(splitter0);
+            this.Controls.Add(clipboardPanel);
         }
 
         private void LoadSettings()
@@ -232,8 +398,10 @@ namespace SnippetViewer
                 {
                     this.Size = new Size(settings.WindowWidth, settings.WindowHeight);
 
+                    clipboardPanel.Width = settings.ClipboardPanelWidth;
                     leftPanel.Width = settings.LeftPanelWidth;
                     centerPanel.Width = settings.CenterPanelWidth;
+                    clipboardHistoryMaxCount = settings.ClipboardHistoryMaxCount;
 
                     // 選択状態を一時保存（LoadSnippetFilesで復元）
                     savedSelectedFileName = settings.SelectedFileName ?? "";
@@ -267,8 +435,10 @@ namespace SnippetViewer
                 {
                     WindowWidth = this.Size.Width,
                     WindowHeight = this.Size.Height,
+                    ClipboardPanelWidth = clipboardPanel.Width,
                     LeftPanelWidth = leftPanel.Width,
                     CenterPanelWidth = centerPanel.Width,
+                    ClipboardHistoryMaxCount = clipboardHistoryMaxCount,
                     SelectedFileName = selectedFileName,
                     SelectedHeadingTitle = selectedHeadingTitle
                 };
@@ -537,8 +707,10 @@ namespace SnippetViewer
     {
         public int WindowWidth { get; set; } = 1200;
         public int WindowHeight { get; set; } = 700;
+        public int ClipboardPanelWidth { get; set; } = 200;
         public int LeftPanelWidth { get; set; } = 200;
         public int CenterPanelWidth { get; set; } = 350;
+        public int ClipboardHistoryMaxCount { get; set; } = 50;
         public string SelectedFileName { get; set; } = "";
         public string SelectedHeadingTitle { get; set; } = "";
     }
@@ -563,6 +735,21 @@ namespace SnippetViewer
     {
         private static Mutex mutex;
 
+        internal static readonly uint WM_SHOWME;
+
+        [DllImport("user32.dll")]
+        private static extern uint RegisterWindowMessage(string message);
+
+        [DllImport("user32.dll")]
+        private static extern bool PostMessage(IntPtr hwnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        private static readonly IntPtr HWND_BROADCAST = new IntPtr(0xffff);
+
+        static Program()
+        {
+            WM_SHOWME = RegisterWindowMessage("WM_SHOWME_SnippetViewer");
+        }
+
         [STAThread]
         static void Main()
         {
@@ -571,6 +758,8 @@ namespace SnippetViewer
             mutex = new Mutex(true, "SnippetViewer_SingleInstance", out createdNew);
             if (!createdNew)
             {
+                // 既存インスタンスをアクティブにする
+                PostMessage(HWND_BROADCAST, WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
                 return;
             }
 
